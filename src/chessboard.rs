@@ -190,7 +190,7 @@ impl Board {
                         }
                     }
                     // Handle en passant capture
-                    if piece_name == "P" && file != from_file && self.pieces.iter().find(|p| p.get_rank() == from_rank && p.get_file() == file && p.get_name() == "P").is_none() {
+                    if piece_name == "P" && file != from_file && self.pieces.iter().find(|p| p.get_rank() == rank && p.get_file() == file).is_none() {
                         // En passant: remove the captured pawn
                         if let Some(en_passant_index) = self.pieces.iter().position(|p| p.get_rank() == from_rank && p.get_file() == file) {
                             self.pieces.remove(en_passant_index);
