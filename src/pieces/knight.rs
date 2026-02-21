@@ -1,5 +1,6 @@
 use crate::pieces::piece::{Piece};
 
+#[derive(Clone)]
 pub struct Knight {    
     name: String,
     rank: i32, 

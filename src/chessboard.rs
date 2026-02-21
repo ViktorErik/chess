@@ -355,6 +355,107 @@ impl Board {
         &self.current_turn
     }
 
+    pub fn is_game_over(&self) -> bool {
+        let moves = self.get_all_moves(&self.current_turn);
+        moves.is_empty()
+    }
+
+    pub fn get_all_moves(&self, color: &str) -> Vec<((i32, i32), (i32, i32))> {
+        let mut all_moves = Vec::new();
+        for p in &self.pieces {
+            if p.get_color() == color {
+                let from = (p.get_rank(), p.get_file());
+                let possible = p.get_possible_moves(self);
+                for to in possible {
+                    all_moves.push((from, to));
+                }
+            }
+        }
+        all_moves
+    }
+
+    pub fn make_move(&mut self, m: ((i32, i32), (i32, i32))) {
+        let ((from_rank, from_file), (to_rank, to_file)) = m;
+        if let Some(piece_index) = self.pieces.iter().position(|p| p.get_rank() == from_rank && p.get_file() == from_file) {
+            let mut adjusted_index = piece_index;
+            
+            // Remove captured piece if any
+            if let Some(captured_index) = self.pieces.iter().position(|p| p.get_rank() == to_rank && p.get_file() == to_file) {
+                self.pieces.remove(captured_index);
+                // Adjust index if the captured piece was before it
+                if captured_index < adjusted_index {
+                    adjusted_index -= 1;
+                }
+            }
+            // Handle en passant
+            if self.pieces[adjusted_index].get_name() == "P" && from_file != to_file && self.pieces.iter().find(|p| p.get_rank() == to_rank && p.get_file() == to_file).is_none() {
+                // Remove the captured pawn
+                if let Some(en_index) = self.pieces.iter().position(|p| p.get_rank() == from_rank && p.get_file() == to_file) {
+                    self.pieces.remove(en_index);
+                    if en_index < adjusted_index {
+                        adjusted_index -= 1;
+                    }
+                }
+            }
+            // Move the piece
+            self.pieces[adjusted_index].set_rank(to_rank);
+            self.pieces[adjusted_index].set_file(to_file);
+            // Update last_double_pawn_file
+            if self.pieces[adjusted_index].get_name() == "P" && (to_rank - from_rank).abs() == 2 {
+                self.last_double_pawn_file = Some(to_file);
+            } else {
+                self.last_double_pawn_file = None;
+            }
+            // Switch turns
+            self.current_turn = if self.current_turn == "white" { "black".to_string() } else { "white".to_string() };
+        }
+    }
+
+    pub fn position_key(&self) -> String {
+        // Create an 8x8 board representation; empty squares '.'
+        let mut board = vec![vec!['.'; 8]; 8];
+        for p in &self.pieces {
+            let r = p.get_rank() as usize;
+            let f = p.get_file() as usize;
+            let ch = p.get_name().chars().next().unwrap_or(' ');
+            let ch = if p.get_color() == "white" { ch } else { ch.to_ascii_lowercase() };
+            if r < 8 && f < 8 {
+                board[r][f] = ch;
+            }
+        }
+        // Serialize rows from rank 7 to 0 so orientation matches display
+        let mut s = String::new();
+        for rank in (0..8).rev() {
+            for file in 0..8 {
+                s.push(board[rank][file]);
+            }
+        }
+        // add side to move
+        s.push_str(" ");
+        s.push_str(&self.current_turn);
+        // add castling rights
+        let mut cast = String::new();
+        if !self.white_king_moved {
+            if !self.white_rook_h_moved { cast.push('K'); }
+            if !self.white_rook_a_moved { cast.push('Q'); }
+        }
+        if !self.black_king_moved {
+            if !self.black_rook_h_moved { cast.push('k'); }
+            if !self.black_rook_a_moved { cast.push('q'); }
+        }
+        if cast.is_empty() { cast.push('-'); }
+        s.push_str(" ");
+        s.push_str(&cast);
+        // add en passant file or -
+        s.push_str(" ");
+        if let Some(f) = self.last_double_pawn_file {
+            s.push_str(&f.to_string());
+        } else {
+            s.push('-');
+        }
+        s
+    }
+
     pub fn promote_piece(&mut self, piece_index: usize, piece_type: char) {
         let color = self.pieces[piece_index].get_color().to_string();
         let rank = self.pieces[piece_index].get_rank();
@@ -378,5 +479,38 @@ impl Board {
         self.selected_piece = None;
         self.possible_moves.clear();
         self.current_turn = if self.current_turn == "white" { "black".to_string() } else { "white".to_string() };
+    }
+}
+
+impl Clone for Board {
+    fn clone(&self) -> Self {
+        let mut pieces = Vec::new();
+        for p in &self.pieces {
+            let new_piece: Box<dyn Piece> = match p.get_name() {
+                "P" => Box::new(crate::pieces::pawn::Pawn::new(p.get_color(), p.get_rank(), p.get_file())),
+                "R" => Box::new(crate::pieces::rook::Rook::new(p.get_color(), p.get_rank(), p.get_file())),
+                "N" => Box::new(crate::pieces::knight::Knight::new(p.get_color(), p.get_rank(), p.get_file())),
+                "B" => Box::new(crate::pieces::bishop::Bishop::new(p.get_color(), p.get_rank(), p.get_file())),
+                "Q" => Box::new(crate::pieces::queen::Queen::new(p.get_color(), p.get_rank(), p.get_file())),
+                "K" => Box::new(crate::pieces::king::King::new(p.get_color(), p.get_rank(), p.get_file())),
+                _ => Box::new(crate::pieces::pawn::Pawn::new(p.get_color(), p.get_rank(), p.get_file())),
+            };
+            pieces.push(new_piece);
+        }
+        Board {
+            square_size: self.square_size,
+            pieces,
+            selected_piece: self.selected_piece,
+            possible_moves: self.possible_moves.clone(),
+            current_turn: self.current_turn.clone(),
+            last_double_pawn_file: self.last_double_pawn_file,
+            white_king_moved: self.white_king_moved,
+            white_rook_a_moved: self.white_rook_a_moved,
+            white_rook_h_moved: self.white_rook_h_moved,
+            black_king_moved: self.black_king_moved,
+            black_rook_a_moved: self.black_rook_a_moved,
+            black_rook_h_moved: self.black_rook_h_moved,
+            promotion_state: self.promotion_state,
+        }
     }
 }

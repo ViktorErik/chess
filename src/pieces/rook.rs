@@ -1,5 +1,6 @@
 use crate::pieces::piece::{Piece};
 
+#[derive(Clone)]
 pub struct Rook {    
     name: String,
     rank: i32, 
